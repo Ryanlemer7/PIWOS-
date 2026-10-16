@@ -338,9 +338,13 @@ using (public.has_company_role(company_id, array['owner','admin','manager']::pub
 
 create policy "members read order items" on public.order_items for select to authenticated
 using (public.is_company_member(company_id));
-create policy "company staff manage order items" on public.order_items for all to authenticated
+create policy "company staff create order items" on public.order_items for insert to authenticated
+with check (public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[]));
+create policy "company staff update order items" on public.order_items for update to authenticated
 using (public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[]))
 with check (public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[]));
+create policy "company managers delete order items" on public.order_items for delete to authenticated
+using (public.has_company_role(company_id, array['owner','admin','manager']::public.company_member_role[]));
 
 create policy "published posts and own company posts readable" on public.showcase_posts for select to authenticated
 using (is_published = true or public.is_company_member(company_id));
@@ -469,6 +473,22 @@ create trigger guard_company_membership_before_write
 before insert or update or delete on public.company_members
 for each row execute function public.guard_company_membership();
 
+create or replace function public.guard_company_creator_immutable()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public, pg_temp
+as $
+begin
+  if new.created_by is distinct from old.created_by then
+    raise exception 'company creator attribution is immutable' using errcode = '42501';
+  end if;
+  return new;
+end;
+$;
+create trigger guard_company_creator_before_update
+before update of created_by on public.companies
+for each row execute function public.guard_company_creator_immutable();
+
 create or replace function public.guard_actor_identity()
 returns trigger
 language plpgsql
@@ -572,4 +592,4 @@ grant select, insert, update on public.messages to authenticated;
 grant select, update on public.notifications to authenticated;
 grant select, insert on public.ledger_entries to authenticated;
 grant select, insert, update, delete on public.legal_documents to authenticated;
-grant select, insert on public.audit_events to authenticated;
+grant select on public.audit_events to authenticated;
