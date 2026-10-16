@@ -489,6 +489,49 @@ create trigger guard_company_creator_before_update
 before update of created_by on public.companies
 for each row execute function public.guard_company_creator_immutable();
 
+create or replace function public.guard_tenant_and_attribution_immutable()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public, pg_temp
+as $
+declare
+  v_new jsonb := to_jsonb(new);
+  v_old jsonb := to_jsonb(old);
+begin
+  if v_new ? 'company_id' and v_new->>'company_id' is distinct from v_old->>'company_id' then
+    raise exception 'company_id is immutable after record creation' using errcode = '42501';
+  end if;
+  if v_new ? 'created_by' and v_new->>'created_by' is distinct from v_old->>'created_by' then
+    raise exception 'created_by attribution is immutable' using errcode = '42501';
+  end if;
+  if v_new ? 'author_id' and v_new->>'author_id' is distinct from v_old->>'author_id' then
+    raise exception 'author_id attribution is immutable' using errcode = '42501';
+  end if;
+  if v_new ? 'sender_id' and v_new->>'sender_id' is distinct from v_old->>'sender_id' then
+    raise exception 'sender_id attribution is immutable' using errcode = '42501';
+  end if;
+  return new;
+end;
+$;
+create trigger immutable_company_fields before update on public.companies
+for each row execute function public.guard_tenant_and_attribution_immutable();
+create trigger immutable_product_fields before update on public.products
+for each row execute function public.guard_tenant_and_attribution_immutable();
+create trigger immutable_order_fields before update on public.orders
+for each row execute function public.guard_tenant_and_attribution_immutable();
+create trigger immutable_order_item_fields before update on public.order_items
+for each row execute function public.guard_tenant_and_attribution_immutable();
+create trigger immutable_post_fields before update on public.showcase_posts
+for each row execute function public.guard_tenant_and_attribution_immutable();
+create trigger immutable_ledger_fields before update on public.ledger_entries
+for each row execute function public.guard_tenant_and_attribution_immutable();
+create trigger immutable_legal_fields before update on public.legal_documents
+for each row execute function public.guard_tenant_and_attribution_immutable();
+create trigger immutable_message_fields before update on public.messages
+for each row execute function public.guard_tenant_and_attribution_immutable();
+create trigger immutable_notification_fields before update on public.notifications
+for each row execute function public.guard_tenant_and_attribution_immutable();
+
 create or replace function public.guard_actor_identity()
 returns trigger
 language plpgsql
