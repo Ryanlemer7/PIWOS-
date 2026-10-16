@@ -187,7 +187,7 @@ function App() {
         </> : active === 'Showcase' ? <Showcase products={filteredProducts} search={search} setSearch={setSearch} onAdd={() => setShowProductForm(true)} onProductClick={(p) => notify(p.name + ' — fiche produit de démonstration.')} /> :
           <SectionView active={active} onNavigate={selectNav} notify={notify} />}
 
-        <footer className="page-footer"><span>© 2026 OWO · Construire ensemble, grandir ensemble.</span><span><ShieldCheck size={13}/> Vos espaces sont conçus pour rester isolés et sécurisés.</span></footer>
+        <footer className="page-footer"><span>© 2026 OWO · Construire ensemble, grandir ensemble.</span><span><ShieldCheck size={13}/> Démonstration : les protections serveur restent à tester avant production.</span></footer>
       </div>
     </main>
 
