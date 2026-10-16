@@ -24,7 +24,7 @@ create table public.companies (
   contact_email text,
   description text,
   logo_url text,
-  created_by uuid not null references auth.users(id),
+  created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -49,7 +49,7 @@ create table public.products (
   stock_quantity integer not null default 0 check (stock_quantity >= 0),
   image_url text,
   is_published boolean not null default false,
-  created_by uuid not null default auth.uid() references auth.users(id),
+  created_by uuid default auth.uid() references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -64,7 +64,7 @@ create table public.orders (
   currency text not null default 'PI',
   total_amount numeric(18, 4) not null default 0 check (total_amount >= 0),
   notes text,
-  created_by uuid not null default auth.uid() references auth.users(id),
+  created_by uuid default auth.uid() references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique(company_id, order_number)
@@ -84,7 +84,7 @@ create table public.order_items (
 create table public.showcase_posts (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
-  author_id uuid not null default auth.uid() references auth.users(id),
+  author_id uuid default auth.uid() references auth.users(id) on delete set null,
   body text not null check (char_length(trim(body)) > 0),
   media_url text,
   is_published boolean not null default false,
@@ -109,7 +109,7 @@ create table public.post_reactions (
 create table public.messages (
   id uuid primary key default gen_random_uuid(),
   company_id uuid references public.companies(id) on delete cascade,
-  sender_id uuid not null default auth.uid() references auth.users(id),
+  sender_id uuid default auth.uid() references auth.users(id) on delete set null,
   recipient_id uuid not null references auth.users(id) on delete cascade,
   body text not null check (char_length(trim(body)) > 0),
   read_at timestamptz,
@@ -135,7 +135,7 @@ create table public.ledger_entries (
   currency text not null default 'PI',
   description text not null,
   reference text,
-  created_by uuid not null default auth.uid() references auth.users(id),
+  created_by uuid default auth.uid() references auth.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -147,7 +147,7 @@ create table public.legal_documents (
   storage_path text,
   status text not null default 'draft' check (status in ('draft', 'review', 'signed', 'archived')),
   due_at timestamptz,
-  created_by uuid not null default auth.uid() references auth.users(id),
+  created_by uuid default auth.uid() references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -164,6 +164,20 @@ create table public.audit_events (
   created_at timestamptz not null default now()
 );
 
+-- Tenant-aware composite keys prevent an order item from pointing across companies.
+alter table public.products add constraint products_company_id_id_key unique (company_id, id);
+alter table public.orders add constraint orders_company_id_id_key unique (company_id, id);
+alter table public.order_items
+  add constraint order_items_company_order_fk
+  foreign key (company_id, order_id)
+  references public.orders(company_id, id) on delete cascade;
+alter table public.order_items
+  add constraint order_items_company_product_fk
+  foreign key (company_id, product_id)
+  references public.products(company_id, id) on delete set null (product_id);
+
+create index order_items_order_idx on public.order_items(order_id);
+create index messages_recipient_created_idx on public.messages(recipient_id, created_at desc);
 create index products_company_published_idx on public.products(company_id, is_published, created_at desc);
 create index orders_company_status_idx on public.orders(company_id, status, created_at desc);
 create index showcase_company_published_idx on public.showcase_posts(company_id, is_published, created_at desc);
@@ -265,26 +279,54 @@ with check (public.has_company_role(id, array['owner','admin']::public.company_m
 
 create policy "members see company membership" on public.company_members for select to authenticated
 using (user_id = auth.uid() or public.is_company_member(company_id));
-create policy "company creators add initial membership" on public.company_members for insert to authenticated
+create policy "company creators add initial owner membership" on public.company_members for insert to authenticated
 with check (
   user_id = auth.uid()
-  and exists (select 1 from public.companies c where c.id = company_id and c.created_by = auth.uid())
+  and role = 'owner'
+  and exists (
+    select 1 from public.companies c
+    where c.id = company_id and c.created_by = auth.uid()
+  )
+  and not exists (
+    select 1 from public.company_members existing where existing.company_id = company_id
+  )
 );
-create policy "company admins manage memberships" on public.company_members for all to authenticated
+create policy "company owners and admins add memberships" on public.company_members for insert to authenticated
+with check (
+  public.has_company_role(company_id, array['owner','admin']::public.company_member_role[])
+  and (role <> 'owner' or public.has_company_role(company_id, array['owner']::public.company_member_role[]))
+);
+create policy "company owners and admins update memberships" on public.company_members for update to authenticated
 using (public.has_company_role(company_id, array['owner','admin']::public.company_member_role[]))
 with check (public.has_company_role(company_id, array['owner','admin']::public.company_member_role[]));
+create policy "company owners and admins remove memberships" on public.company_members for delete to authenticated
+using (public.has_company_role(company_id, array['owner','admin']::public.company_member_role[]));
 
 create policy "members read company products" on public.products for select to authenticated
 using (public.is_company_member(company_id) or is_published = true);
-create policy "company editors manage products" on public.products for all to authenticated
+create policy "company editors create products" on public.products for insert to authenticated
+with check (
+  public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[])
+  and created_by = auth.uid()
+);
+create policy "company editors update products" on public.products for update to authenticated
 using (public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[]))
 with check (public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[]));
+create policy "company managers delete products" on public.products for delete to authenticated
+using (public.has_company_role(company_id, array['owner','admin','manager']::public.company_member_role[]));
 
 create policy "members read company orders" on public.orders for select to authenticated
 using (public.is_company_member(company_id));
-create policy "company staff manage orders" on public.orders for all to authenticated
+create policy "company staff create orders" on public.orders for insert to authenticated
+with check (
+  public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[])
+  and created_by = auth.uid()
+);
+create policy "company staff update orders" on public.orders for update to authenticated
 using (public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[]))
 with check (public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[]));
+create policy "company managers delete orders" on public.orders for delete to authenticated
+using (public.has_company_role(company_id, array['owner','admin','manager']::public.company_member_role[]));
 
 create policy "members read order items" on public.order_items for select to authenticated
 using (public.is_company_member(company_id));
@@ -294,15 +336,26 @@ with check (public.has_company_role(company_id, array['owner','admin','manager',
 
 create policy "published posts and own company posts readable" on public.showcase_posts for select to authenticated
 using (is_published = true or public.is_company_member(company_id));
-create policy "company staff manage showcase posts" on public.showcase_posts for all to authenticated
+create policy "company staff create showcase posts" on public.showcase_posts for insert to authenticated
+with check (
+  public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[])
+  and author_id = auth.uid()
+);
+create policy "company staff update showcase posts" on public.showcase_posts for update to authenticated
 using (public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[]))
 with check (public.has_company_role(company_id, array['owner','admin','manager','staff']::public.company_member_role[]));
+create policy "company managers delete showcase posts" on public.showcase_posts for delete to authenticated
+using (public.has_company_role(company_id, array['owner','admin','manager']::public.company_member_role[]));
 
-create policy "users read reactions on visible posts" on public.post_reactions for select to authenticated
-using (user_id = auth.uid() or exists (
-  select 1 from public.showcase_posts p
-  where p.id = post_id and (p.is_published = true or public.is_company_member(p.company_id))
-));
+create policy "users read own reactions and company admin moderation" on public.post_reactions for select to authenticated
+using (
+  user_id = auth.uid()
+  or exists (
+    select 1 from public.showcase_posts p
+    where p.id = post_id
+      and public.has_company_role(p.company_id, array['owner','admin']::public.company_member_role[])
+  )
+);
 create policy "users manage own reactions" on public.post_reactions for all to authenticated
 using (user_id = auth.uid())
 with check (user_id = auth.uid() and (reaction <> 'dislike' or char_length(trim(coalesce(reason, ''))) >= 20));
@@ -329,9 +382,171 @@ with check (public.has_company_role(company_id, array['owner','admin']::public.c
 
 create policy "members read audit events" on public.audit_events for select to authenticated
 using (company_id is not null and public.has_company_role(company_id, array['owner','admin']::public.company_member_role[]));
-create policy "authenticated users append audit events" on public.audit_events for insert to authenticated
-with check (actor_id = auth.uid() and (company_id is null or public.is_company_member(company_id)));
--- Intentionally no UPDATE or DELETE policies for audit_events.
+-- Audit events are written only by trusted database triggers; client roles cannot forge events.
+-- Intentionally no INSERT, UPDATE or DELETE policies for audit_events.
+
+
+-- Security hardening: protect membership roles, actor attribution, and audit integrity.
+create or replace function public.guard_company_membership()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, auth, pg_temp
+as $
+declare
+  v_actor uuid := auth.uid();
+  v_actor_role public.company_member_role;
+  v_creator uuid;
+  v_owner_count integer;
+  v_company uuid;
+begin
+  if v_actor is null then
+    if tg_op = 'DELETE' then return old; else return new; end if;
+  end if;
+  v_company := case when tg_op = 'DELETE' then old.company_id else new.company_id end;
+  select c.created_by into v_creator from public.companies c where c.id = v_company;
+  select m.role into v_actor_role from public.company_members m
+    where m.company_id = v_company and m.user_id = v_actor;
+
+  if tg_op = 'INSERT' then
+    if new.user_id = v_actor and new.role = 'owner' and v_creator = v_actor
+       and not exists (select 1 from public.company_members m where m.company_id = new.company_id) then
+      return new;
+    end if;
+    if v_actor_role not in ('owner','admin') or v_actor_role is null then
+      raise exception 'Only company owners or admins may add members' using errcode = '42501';
+    end if;
+    if new.role = 'owner' and v_actor_role <> 'owner' then
+      raise exception 'Only an existing owner may assign the owner role' using errcode = '42501';
+    end if;
+    return new;
+  elsif tg_op = 'UPDATE' then
+    if new.company_id <> old.company_id or new.user_id <> old.user_id then
+      raise exception 'Membership identity and company are immutable' using errcode = '42501';
+    end if;
+    if new.role is distinct from old.role then
+      if v_actor_role <> 'owner' then
+        raise exception 'Only a company owner may change membership roles' using errcode = '42501';
+      end if;
+      if old.role = 'owner' and new.role <> 'owner' then
+        select count(*) into v_owner_count from public.company_members m
+          where m.company_id = old.company_id and m.role = 'owner';
+        if v_owner_count <= 1 then
+          raise exception 'A company must retain at least one owner' using errcode = '23514';
+        end if;
+      end if;
+    end if;
+    return new;
+  elsif tg_op = 'DELETE' then
+    if v_actor_role not in ('owner','admin') or v_actor_role is null then
+      raise exception 'Only company owners or admins may remove members' using errcode = '42501';
+    end if;
+    if old.role = 'owner' then
+      if v_actor_role <> 'owner' then
+        raise exception 'Only an owner may remove another owner' using errcode = '42501';
+      end if;
+      select count(*) into v_owner_count from public.company_members m
+        where m.company_id = old.company_id and m.role = 'owner';
+      if v_owner_count <= 1 then
+        raise exception 'A company must retain at least one owner' using errcode = '23514';
+      end if;
+    end if;
+    return old;
+  end if;
+  return null;
+end;
+$;
+revoke all on function public.guard_company_membership() from public, anon, authenticated;
+create trigger guard_company_membership_before_write
+before insert or update or delete on public.company_members
+for each row execute function public.guard_company_membership();
+
+create or replace function public.guard_actor_identity()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, auth, pg_temp
+as $
+declare v_actor uuid := auth.uid();
+begin
+  if v_actor is null then return new; end if;
+  if tg_table_name in ('products','orders','ledger_entries','legal_documents')
+     and new.created_by is distinct from v_actor then
+    raise exception 'created_by must match the authenticated user' using errcode = '42501';
+  end if;
+  if tg_table_name = 'showcase_posts' and new.author_id is distinct from v_actor then
+    raise exception 'author_id must match the authenticated user' using errcode = '42501';
+  end if;
+  if tg_table_name = 'messages' and new.sender_id is distinct from v_actor then
+    raise exception 'sender_id must match the authenticated user' using errcode = '42501';
+  end if;
+  return new;
+end;
+$;
+revoke all on function public.guard_actor_identity() from public, anon, authenticated;
+create trigger guard_products_actor before insert on public.products
+for each row execute function public.guard_actor_identity();
+create trigger guard_orders_actor before insert on public.orders
+for each row execute function public.guard_actor_identity();
+create trigger guard_posts_actor before insert on public.showcase_posts
+for each row execute function public.guard_actor_identity();
+create trigger guard_ledger_actor before insert on public.ledger_entries
+for each row execute function public.guard_actor_identity();
+create trigger guard_legal_actor before insert on public.legal_documents
+for each row execute function public.guard_actor_identity();
+create trigger guard_messages_actor before insert on public.messages
+for each row execute function public.guard_actor_identity();
+
+create or replace function public.write_audit_event()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, auth, pg_temp
+as $
+declare
+  v_row jsonb;
+  v_company_id uuid;
+  v_entity_id text;
+begin
+  v_row := case when tg_op = 'DELETE' then to_jsonb(old) else to_jsonb(new) end;
+  if v_row ? 'company_id' then
+    v_company_id := nullif(v_row->>'company_id','')::uuid;
+  elsif tg_table_name = 'companies' then
+    v_company_id := nullif(v_row->>'id','')::uuid;
+  end if;
+  v_entity_id := coalesce(v_row->>'id', v_row->>'order_id');
+  insert into public.audit_events(company_id, actor_id, action, entity_type, entity_id, metadata)
+  values (
+    v_company_id, auth.uid(), lower(tg_op), tg_table_name, v_entity_id,
+    jsonb_build_object('source','database_trigger')
+  );
+  if tg_op = 'DELETE' then return old; else return new; end if;
+end;
+$;
+revoke all on function public.write_audit_event() from public, anon, authenticated;
+create trigger audit_companies after insert or update or delete on public.companies
+for each row execute function public.write_audit_event();
+create trigger audit_members after insert or update or delete on public.company_members
+for each row execute function public.write_audit_event();
+create trigger audit_products after insert or update or delete on public.products
+for each row execute function public.write_audit_event();
+create trigger audit_orders after insert or update or delete on public.orders
+for each row execute function public.write_audit_event();
+create trigger audit_order_items after insert or update or delete on public.order_items
+for each row execute function public.write_audit_event();
+create trigger audit_showcase_posts after insert or update or delete on public.showcase_posts
+for each row execute function public.write_audit_event();
+create trigger audit_ledger_entries after insert or update or delete on public.ledger_entries
+for each row execute function public.write_audit_event();
+create trigger audit_legal_documents after insert or update or delete on public.legal_documents
+for each row execute function public.write_audit_event();
+
+-- Column-level grants make read receipts the only client-editable fields.
+revoke update on public.messages from authenticated;
+grant update (read_at) on public.messages to authenticated;
+revoke update on public.notifications from authenticated;
+grant update (read_at) on public.notifications to authenticated;
+revoke insert on public.audit_events from authenticated;
 
 grant usage on schema public to authenticated;
 grant select, update on public.profiles to authenticated;
