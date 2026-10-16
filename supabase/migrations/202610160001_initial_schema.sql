@@ -155,8 +155,8 @@ create table public.legal_documents (
 -- Append-only audit log. Application users can insert their own events, but cannot update/delete.
 create table public.audit_events (
   id bigint generated always as identity primary key,
-  company_id uuid references public.companies(id) on delete set null,
-  actor_id uuid references auth.users(id) on delete set null,
+  company_id uuid,
+  actor_id uuid,
   action text not null,
   entity_type text not null,
   entity_id text,
@@ -584,9 +584,6 @@ begin
     v_company_id := nullif(v_row->>'company_id','')::uuid;
   elsif tg_table_name = 'companies' then
     v_company_id := nullif(v_row->>'id','')::uuid;
-  end if;
-  if v_company_id is not null and not exists (select 1 from public.companies c where c.id = v_company_id) then
-    v_company_id := null;
   end if;
   v_entity_id := coalesce(v_row->>'id', v_row->>'order_id');
   insert into public.audit_events(company_id, actor_id, action, entity_type, entity_id, metadata)
