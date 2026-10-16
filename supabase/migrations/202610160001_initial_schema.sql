@@ -266,7 +266,15 @@ alter table public.ledger_entries enable row level security;
 alter table public.legal_documents enable row level security;
 alter table public.audit_events enable row level security;
 
-create policy "profiles read signed-in profiles" on public.profiles for select to authenticated using (true);
+create policy "users read own and same-company profiles" on public.profiles for select to authenticated
+using (
+  id = auth.uid()
+  or exists (
+    select 1 from public.company_members m
+    where m.user_id = profiles.id
+      and public.is_company_member(m.company_id)
+  )
+);
 create policy "users update own profile" on public.profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
 
 create policy "members read their companies" on public.companies for select to authenticated
@@ -513,6 +521,9 @@ begin
     v_company_id := nullif(v_row->>'company_id','')::uuid;
   elsif tg_table_name = 'companies' then
     v_company_id := nullif(v_row->>'id','')::uuid;
+  end if;
+  if v_company_id is not null and not exists (select 1 from public.companies c where c.id = v_company_id) then
+    v_company_id := null;
   end if;
   v_entity_id := coalesce(v_row->>'id', v_row->>'order_id');
   insert into public.audit_events(company_id, actor_id, action, entity_type, entity_id, metadata)
