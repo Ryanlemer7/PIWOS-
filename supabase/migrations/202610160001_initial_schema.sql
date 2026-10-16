@@ -296,7 +296,7 @@ with check (
     where c.id = company_id and c.created_by = auth.uid()
   )
   and not exists (
-    select 1 from public.company_members existing where existing.company_id = company_id
+    select 1 from public.company_members existing where existing.company_id = public.company_members.company_id
   )
 );
 create policy "company owners and admins add memberships" on public.company_members for insert to authenticated
