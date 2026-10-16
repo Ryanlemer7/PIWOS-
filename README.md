@@ -40,6 +40,17 @@ La migration initiale se trouve dans `supabase/migrations/202610160001_initial_s
 
 La migration active RLS sur les tables métier et utilise des fonctions de contrôle d'appartenance pour l'isolation des entreprises. Les réactions négatives exigent un motif d'au moins 20 caractères. Les événements d'audit et les écritures du registre interne ne disposent pas de politique de modification/suppression pour les rôles applicatifs ordinaires.
 
+## Vérifications de sécurité
+
+Les contrôles de régression SQL sont dans `supabase/tests/database/rls_security.pgtap.sql` (pgTAP) et `supabase/tests/database/rls_security.test.sql` (assertions SQL). Après avoir installé Docker et la Supabase CLI, démarrez l'environnement local puis lancez :
+
+```bash
+supabase start
+supabase test db
+```
+
+Ces tests vérifient les privilèges de colonnes, les contraintes composites inter-entreprises, les triggers de protection des rôles et l'audit. Ils restent des contrôles structurels : des scénarios comportementaux multi-utilisateurs avec plusieurs entreprises doivent encore être ajoutés et exécutés avant la production.
+
 ## Sécurité et limites
 
 - L'interface est une démonstration et ne remplace pas encore les tests de sécurité.
