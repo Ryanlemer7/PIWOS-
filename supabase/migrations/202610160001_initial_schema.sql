@@ -404,7 +404,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public, auth, pg_temp
-as $
+as $$
 declare
   v_actor uuid := auth.uid();
   v_actor_role public.company_member_role;
@@ -467,7 +467,7 @@ begin
   end if;
   return null;
 end;
-$;
+$$;
 revoke all on function public.guard_company_membership() from public, anon, authenticated;
 create trigger guard_company_membership_before_write
 before insert or update or delete on public.company_members
@@ -477,14 +477,14 @@ create or replace function public.guard_company_creator_immutable()
 returns trigger
 language plpgsql
 set search_path = pg_catalog, public, pg_temp
-as $
+as $$
 begin
   if new.created_by is distinct from old.created_by then
     raise exception 'company creator attribution is immutable' using errcode = '42501';
   end if;
   return new;
 end;
-$;
+$$;
 create trigger guard_company_creator_before_update
 before update of created_by on public.companies
 for each row execute function public.guard_company_creator_immutable();
@@ -493,7 +493,7 @@ create or replace function public.guard_tenant_and_attribution_immutable()
 returns trigger
 language plpgsql
 set search_path = pg_catalog, public, pg_temp
-as $
+as $$
 declare
   v_new jsonb := to_jsonb(new);
   v_old jsonb := to_jsonb(old);
@@ -512,7 +512,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 create trigger immutable_company_fields before update on public.companies
 for each row execute function public.guard_tenant_and_attribution_immutable();
 create trigger immutable_product_fields before update on public.products
@@ -537,7 +537,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public, auth, pg_temp
-as $
+as $$
 declare v_actor uuid := auth.uid();
 begin
   if v_actor is null then return new; end if;
@@ -553,7 +553,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 revoke all on function public.guard_actor_identity() from public, anon, authenticated;
 create trigger guard_products_actor before insert on public.products
 for each row execute function public.guard_actor_identity();
@@ -573,7 +573,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public, auth, pg_temp
-as $
+as $$
 declare
   v_row jsonb;
   v_company_id uuid;
@@ -593,7 +593,7 @@ begin
   );
   if tg_op = 'DELETE' then return old; else return new; end if;
 end;
-$;
+$$;
 revoke all on function public.write_audit_event() from public, anon, authenticated;
 create trigger audit_companies after insert or update or delete on public.companies
 for each row execute function public.write_audit_event();
