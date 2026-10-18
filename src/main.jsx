@@ -277,7 +277,7 @@ function App() {
   const selectNav = (id) => { setActive(id); setMobileOpen(false); setSearch(''); };
 
   if (isSupabaseConfigured && !authReady) return <LoadingScreen message="Préparation de votre espace OWO…" />;
-  if (isSupabaseConfigured && authReady && !session) return <AuthScreen mode={authMode} setMode={setAuthMode} email={authEmail} setEmail={setAuthEmail} password={authPassword} setPassword={setAuthPassword} name={authName} setName={setAuthName} busy={authBusy} onSubmit={submitAuth} />;
+  if (isSupabaseConfigured && authReady && !session) return <AuthScreen mode={authMode} setMode={setAuthMode} email={authEmail} setEmail={setAuthEmail} password={authPassword} setPassword={setAuthPassword} name={authName} setName={setAuthName} busy={authBusy} feedback={toast} onSubmit={submitAuth} />;
   if (isSupabaseConfigured && session && !companyReady) return <LoadingScreen message="Chargement de votre espace entreprise…" />;
   if (isSupabaseConfigured && session && companyReady && workspaceError && !company) return <WorkspaceError message={workspaceError} onRetry={() => { setWorkspaceError(''); setCompanyReady(false); setWorkspaceReload(value => value + 1); }} onSignOut={signOut} />;
   if (isSupabaseConfigured && session && companyReady && !company) return <CompanySetup name={companyName} setName={setCompanyName} country={companyCountry} setCountry={setCompanyCountry} busy={authBusy} error={workspaceError} onSubmit={createCompany} onSignOut={signOut} />;
@@ -405,11 +405,12 @@ function SectionView({ active, onNavigate, notify }) {
 function LoadingScreen({ message }) {
   return <main className="auth-screen"><section className="auth-card"><div className="auth-brand"><div className="brand-symbol">O</div><div><div className="brand-name">OWO<span>.</span></div><div className="brand-tag">ÉCONOMIE EN RÉSEAU</div></div></div><div className="auth-loading"><span className="loading-spinner"/><p>{message}</p></div></section></main>;
 }
-function AuthScreen({ mode, setMode, email, setEmail, password, setPassword, name, setName, busy, onSubmit }) {
+function AuthScreen({ mode, setMode, email, setEmail, password, setPassword, name, setName, busy, feedback, onSubmit }) {
   return <main className="auth-screen"><section className="auth-card">
     <div className="auth-brand"><div className="brand-symbol">O</div><div><div className="brand-name">OWO<span>.</span></div><div className="brand-tag">ÉCONOMIE EN RÉSEAU</div></div></div>
     <div className="auth-eyebrow">VOTRE UNIVERS, VOS OPPORTUNITÉS</div><h1>{mode === 'signup' ? 'Créez votre compte.' : 'Ravi de vous revoir.'}</h1>
     <p className="auth-intro">{mode === 'signup' ? 'Rejoignez OWO et préparez votre espace professionnel.' : 'Connectez-vous pour retrouver votre espace entreprise et vos données.'}</p>
+    {feedback && <div className="auth-feedback" role="status">{feedback}</div>}
     <form className="auth-form" onSubmit={onSubmit}>
       {mode === 'signup' && <label>Nom affiché<input value={name} onChange={e => setName(e.target.value)} placeholder="Votre nom" autoComplete="name" required /></label>}
       <label>Adresse e-mail<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="vous@exemple.com" autoComplete="email" required /></label>
