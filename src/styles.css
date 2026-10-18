@@ -36,3 +36,5 @@
 .auth-logout{display:block;margin:15px auto 0;color:#a49b8a}
 @keyframes owoSpin{to{transform:rotate(360deg)}}
 @media(max-width:480px){.auth-screen{padding:14px}.auth-card{padding:24px 19px;border-radius:15px}.auth-brand{margin-bottom:28px}}
+
+.auth-feedback{margin:0 0 16px;padding:11px 12px;border:1px solid #594a2b;border-radius:8px;background:#282115;color:#e7d4a2;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
