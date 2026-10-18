@@ -88,6 +88,7 @@ function App() {
   const [companyName, setCompanyName] = useState('');
   const [companyCountry, setCompanyCountry] = useState('Niger');
   const [workspaceError, setWorkspaceError] = useState('');
+  const [workspaceReload, setWorkspaceReload] = useState(0);
   const [orders, setOrders] = useState(initialOrders);
   const [dataBusy, setDataBusy] = useState(false);
   const displayName = session?.user?.user_metadata?.display_name || session?.user?.email?.split('@')[0] || 'Membre';
@@ -139,7 +140,7 @@ function App() {
     };
     loadCompany();
     return () => { cancelled = true; };
-  }, [session?.user?.id]);
+  }, [session?.user?.id, workspaceReload]);
 
   React.useEffect(() => {
     if (!isSupabaseConfigured || !session?.user?.id || !company?.id) return;
@@ -278,7 +279,7 @@ function App() {
   if (isSupabaseConfigured && !authReady) return <LoadingScreen message="Préparation de votre espace OWO…" />;
   if (isSupabaseConfigured && authReady && !session) return <AuthScreen mode={authMode} setMode={setAuthMode} email={authEmail} setEmail={setAuthEmail} password={authPassword} setPassword={setAuthPassword} name={authName} setName={setAuthName} busy={authBusy} onSubmit={submitAuth} />;
   if (isSupabaseConfigured && session && !companyReady) return <LoadingScreen message="Chargement de votre espace entreprise…" />;
-  if (isSupabaseConfigured && session && companyReady && workspaceError && !company) return <WorkspaceError message={workspaceError} onRetry={() => { setWorkspaceError(''); setCompanyReady(false); }} onSignOut={signOut} />;
+  if (isSupabaseConfigured && session && companyReady && workspaceError && !company) return <WorkspaceError message={workspaceError} onRetry={() => { setWorkspaceError(''); setCompanyReady(false); setWorkspaceReload(value => value + 1); }} onSignOut={signOut} />;
   if (isSupabaseConfigured && session && companyReady && !company) return <CompanySetup name={companyName} setName={setCompanyName} country={companyCountry} setCountry={setCompanyCountry} busy={authBusy} error={workspaceError} onSubmit={createCompany} onSignOut={signOut} />;
 
   return <div className="app-shell">
